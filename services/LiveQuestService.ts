@@ -60,7 +60,7 @@ export class LiveQuestService {
         this.maybeGenerateNewQuest();
       }, 10000); // 10 seconds for responsive quest generation
       
-    }, 180000); // 3 minutes delay
+    }, 60000); // 3 minutes delay
   }
 
   // Generate a new quest based on current workout state
