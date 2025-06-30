@@ -220,18 +220,7 @@ export default function AuthForm({ mode, onSubmit, onModeChange, isLoading, erro
           </TouchableOpacity>
         </View>
 
-        {/* Supabase Info */}
-        <View style={styles.infoContainer}>
-          <Text style={styles.infoTitle}>🚀 Powered by Supabase</Text>
-          <Text style={styles.infoText}>
-            Your account is securely stored in Supabase, a modern backend-as-a-service platform.
-          </Text>
-          {mode === 'register' && (
-            <Text style={styles.infoText}>
-              After registration, you may need to verify your email address depending on your Supabase configuration.
-            </Text>
-          )}
-        </View>
+        
       </View>
     </View>
   );
