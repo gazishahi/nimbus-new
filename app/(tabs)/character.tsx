@@ -170,8 +170,8 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   circleImage: {
-    width: 100,
-    height: 100,
+    width: 50,
+    height: 50,
   },
   bottomSpacing: {
     height: 100,
