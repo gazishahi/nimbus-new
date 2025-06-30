@@ -22,7 +22,10 @@ CREATE TABLE IF NOT EXISTS profiles (
   display_name TEXT,
   avatar_url TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  weekly_distance INTEGER DEFAULT 0,
+  monthly_distance INTEGER DEFAULT 0,
+  all_time_distance INTEGER DEFAULT 0
 );
 
 -- Create user_stats table
@@ -35,13 +38,84 @@ CREATE TABLE IF NOT EXISTS user_stats (
   level INTEGER DEFAULT 1,
   experience INTEGER DEFAULT 0,
   character_class TEXT DEFAULT 'speed-runner',
+  skill_points INTEGER DEFAULT 0,
+  spent_skill_points INTEGER DEFAULT 0,
+  path_skills JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create workout_sessions table
+CREATE TABLE IF NOT EXISTS workout_sessions (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  start_time TIMESTAMPTZ NOT NULL,
+  end_time TIMESTAMPTZ,
+  workout_type TEXT DEFAULT 'running' CHECK (workout_type IN ('running', 'walking', 'cycling', 'other')),
+  total_distance INTEGER DEFAULT 0,
+  total_duration INTEGER DEFAULT 0,
+  average_pace NUMERIC(5,2),
+  max_speed NUMERIC(5,2),
+  average_heart_rate INTEGER,
+  max_heart_rate INTEGER,
+  calories_burned INTEGER DEFAULT 0,
+  elevation_gain INTEGER DEFAULT 0,
+  weather_conditions TEXT,
+  notes TEXT,
+  is_completed BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create leaderboards table
+CREATE TABLE IF NOT EXISTS leaderboards (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  leaderboard_type TEXT NOT NULL CHECK (leaderboard_type IN ('weekly_distance', 'monthly_distance', 'weekly_runs', 'monthly_runs', 'level_ranking')),
+  period_start DATE NOT NULL,
+  period_end DATE NOT NULL,
+  value INTEGER NOT NULL,
+  rank_position INTEGER,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (user_id, leaderboard_type, period_start)
+);
+
+-- Create achievements table
+CREATE TABLE IF NOT EXISTS achievements (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  key TEXT UNIQUE NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  icon TEXT NOT NULL,
+  rarity TEXT NOT NULL CHECK (rarity IN ('bronze', 'silver', 'gold', 'platinum', 'legendary')),
+  category TEXT NOT NULL CHECK (category IN ('distance', 'runs', 'time', 'streak', 'speed', 'level', 'special')),
+  requirement_type TEXT NOT NULL CHECK (requirement_type IN ('total_distance', 'total_runs', 'total_time', 'level', 'streak_days', 'single_run_distance', 'average_pace')),
+  requirement_value INTEGER NOT NULL,
+  xp_reward INTEGER DEFAULT 0 NOT NULL,
+  coin_reward INTEGER DEFAULT 0 NOT NULL,
+  is_hidden BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create user_achievements table
+CREATE TABLE IF NOT EXISTS user_achievements (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  achievement_id UUID REFERENCES achievements(id) ON DELETE CASCADE NOT NULL,
+  unlocked_at TIMESTAMPTZ DEFAULT NOW(),
+  progress INTEGER DEFAULT 0,
+  is_completed BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (user_id, achievement_id)
 );
 
 -- Enable Row Level Security
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_stats ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workout_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE leaderboards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE achievements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_achievements ENABLE ROW LEVEL SECURITY;
 
 -- Create policies for profiles
 CREATE POLICY "Users can view own profile" ON profiles
@@ -63,6 +137,34 @@ CREATE POLICY "Users can update own stats" ON user_stats
 CREATE POLICY "Users can insert own stats" ON user_stats
   FOR INSERT WITH CHECK (auth.uid() = user_id);
 
+-- Create policies for workout_sessions
+CREATE POLICY "Users can view own workout sessions" ON workout_sessions
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own workout sessions" ON workout_sessions
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own workout sessions" ON workout_sessions
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+-- Create policies for leaderboards
+CREATE POLICY "Anyone can view leaderboards" ON leaderboards
+  FOR SELECT USING (true);
+
+-- Create policies for achievements
+CREATE POLICY "Anyone can view achievements" ON achievements
+  FOR SELECT USING (true);
+
+-- Create policies for user_achievements
+CREATE POLICY "Users can view own achievements" ON user_achievements
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own achievements" ON user_achievements
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own achievements" ON user_achievements
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
 -- Create function to handle updated_at timestamp
 CREATE OR REPLACE FUNCTION handle_updated_at()
 RETURNS TRIGGER AS $$
@@ -80,6 +182,135 @@ CREATE TRIGGER profiles_updated_at
 CREATE TRIGGER user_stats_updated_at
   BEFORE UPDATE ON user_stats
   FOR EACH ROW EXECUTE FUNCTION handle_updated_at();
+
+CREATE TRIGGER workout_sessions_updated_at
+  BEFORE UPDATE ON workout_sessions
+  FOR EACH ROW EXECUTE FUNCTION handle_updated_at();
+
+-- Create function to update profile after workout
+CREATE OR REPLACE FUNCTION update_profile_after_workout()
+RETURNS TRIGGER AS $$
+DECLARE
+  current_week_start DATE;
+  current_month_start DATE;
+BEGIN
+  -- Only process completed workouts
+  IF NEW.is_completed = true AND (OLD.is_completed IS NULL OR OLD.is_completed = false) THEN
+    current_week_start := date_trunc('week', NEW.end_time)::date;
+    current_month_start := date_trunc('month', NEW.end_time)::date;
+    
+    -- Update profile distances
+    UPDATE profiles 
+    SET 
+      all_time_distance = all_time_distance + NEW.total_distance,
+      weekly_distance = CASE 
+        WHEN date_trunc('week', updated_at)::date = current_week_start 
+        THEN weekly_distance + NEW.total_distance
+        ELSE NEW.total_distance
+      END,
+      monthly_distance = CASE 
+        WHEN date_trunc('month', updated_at)::date = current_month_start 
+        THEN monthly_distance + NEW.total_distance
+        ELSE NEW.total_distance
+      END,
+      updated_at = NOW()
+    WHERE id = NEW.user_id;
+    
+    -- Update user stats
+    UPDATE user_stats 
+    SET 
+      total_distance = total_distance + NEW.total_distance,
+      total_runs = total_runs + 1,
+      total_time = total_time + NEW.total_duration,
+      updated_at = NOW()
+    WHERE user_id = NEW.user_id;
+  END IF;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Create function to update leaderboards after workout
+CREATE OR REPLACE FUNCTION update_leaderboards_after_workout()
+RETURNS TRIGGER AS $$
+DECLARE
+  current_week_start DATE;
+  current_month_start DATE;
+BEGIN
+  -- Only process completed workouts
+  IF NEW.is_completed = true AND (OLD.is_completed IS NULL OR OLD.is_completed = false) THEN
+    current_week_start := date_trunc('week', NEW.end_time)::date;
+    current_month_start := date_trunc('month', NEW.end_time)::date;
+    
+    -- Update weekly distance leaderboard
+    INSERT INTO leaderboards (user_id, leaderboard_type, period_start, period_end, value)
+    VALUES (
+      NEW.user_id, 
+      'weekly_distance', 
+      current_week_start, 
+      current_week_start + interval '6 days',
+      NEW.total_distance
+    )
+    ON CONFLICT (user_id, leaderboard_type, period_start)
+    DO UPDATE SET 
+      value = leaderboards.value + NEW.total_distance;
+    
+    -- Update monthly distance leaderboard
+    INSERT INTO leaderboards (user_id, leaderboard_type, period_start, period_end, value)
+    VALUES (
+      NEW.user_id, 
+      'monthly_distance', 
+      current_month_start, 
+      (current_month_start + interval '1 month' - interval '1 day')::date,
+      NEW.total_distance
+    )
+    ON CONFLICT (user_id, leaderboard_type, period_start)
+    DO UPDATE SET 
+      value = leaderboards.value + NEW.total_distance;
+    
+    -- Update weekly runs leaderboard
+    INSERT INTO leaderboards (user_id, leaderboard_type, period_start, period_end, value)
+    VALUES (
+      NEW.user_id, 
+      'weekly_runs', 
+      current_week_start, 
+      current_week_start + interval '6 days',
+      1
+    )
+    ON CONFLICT (user_id, leaderboard_type, period_start)
+    DO UPDATE SET 
+      value = leaderboards.value + 1;
+    
+    -- Update monthly runs leaderboard
+    INSERT INTO leaderboards (user_id, leaderboard_type, period_start, period_end, value)
+    VALUES (
+      NEW.user_id, 
+      'monthly_runs', 
+      current_month_start, 
+      (current_month_start + interval '1 month' - interval '1 day')::date,
+      1
+    )
+    ON CONFLICT (user_id, leaderboard_type, period_start)
+    DO UPDATE SET 
+      value = leaderboards.value + 1;
+  END IF;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Create triggers for workout completion
+CREATE TRIGGER update_profile_after_workout_trigger
+  AFTER INSERT OR UPDATE OF is_completed ON workout_sessions
+  FOR EACH ROW
+  WHEN (NEW.is_completed = true)
+  EXECUTE FUNCTION update_profile_after_workout();
+
+CREATE TRIGGER update_leaderboards_after_workout_trigger
+  AFTER INSERT OR UPDATE OF is_completed ON workout_sessions
+  FOR EACH ROW
+  WHEN (NEW.is_completed = true)
+  EXECUTE FUNCTION update_leaderboards_after_workout();
 
 -- Create function to handle new user creation
 CREATE OR REPLACE FUNCTION handle_new_user()
@@ -109,9 +340,28 @@ CREATE TRIGGER on_auth_user_created
 
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS profiles_username_idx ON profiles(username);
+CREATE INDEX IF NOT EXISTS profiles_weekly_distance_idx ON profiles(weekly_distance);
+CREATE INDEX IF NOT EXISTS profiles_monthly_distance_idx ON profiles(monthly_distance);
+CREATE INDEX IF NOT EXISTS profiles_all_time_distance_idx ON profiles(all_time_distance);
+
 CREATE INDEX IF NOT EXISTS user_stats_user_id_idx ON user_stats(user_id);
 CREATE INDEX IF NOT EXISTS user_stats_level_idx ON user_stats(level);
-CREATE INDEX IF NOT EXISTS user_stats_experience_idx ON user_stats(experience);`;
+CREATE INDEX IF NOT EXISTS user_stats_experience_idx ON user_stats(experience);
+
+CREATE INDEX IF NOT EXISTS workout_sessions_user_id_idx ON workout_sessions(user_id);
+CREATE INDEX IF NOT EXISTS workout_sessions_start_time_idx ON workout_sessions(start_time);
+
+CREATE INDEX IF NOT EXISTS leaderboards_type_period_idx ON leaderboards(leaderboard_type, period_start, period_end);
+CREATE INDEX IF NOT EXISTS leaderboards_type_period_rank_idx ON leaderboards(leaderboard_type, period_start, rank_position);
+CREATE INDEX IF NOT EXISTS leaderboards_user_type_period_idx ON leaderboards(user_id, leaderboard_type, period_start);
+CREATE INDEX IF NOT EXISTS leaderboards_rank_idx ON leaderboards(leaderboard_type, period_start, rank_position);
+
+CREATE INDEX IF NOT EXISTS achievements_key_idx ON achievements(key);
+CREATE INDEX IF NOT EXISTS achievements_category_idx ON achievements(category);
+
+CREATE INDEX IF NOT EXISTS user_achievements_user_id_idx ON user_achievements(user_id);
+CREATE INDEX IF NOT EXISTS user_achievements_achievement_id_idx ON user_achievements(achievement_id);
+CREATE INDEX IF NOT EXISTS user_achievements_completed_idx ON user_achievements(is_completed);`;
 
   const checkTablesExist = async (): Promise<boolean> => {
     try {
@@ -276,6 +526,22 @@ CREATE INDEX IF NOT EXISTS user_stats_experience_idx ON user_stats(experience);`
           <View style={styles.tableItem}>
             <Text style={styles.tableName}>• user_stats</Text>
             <Text style={styles.tableDesc}>Game statistics and progress</Text>
+          </View>
+          <View style={styles.tableItem}>
+            <Text style={styles.tableName}>• workout_sessions</Text>
+            <Text style={styles.tableDesc}>Workout tracking and history</Text>
+          </View>
+          <View style={styles.tableItem}>
+            <Text style={styles.tableName}>• leaderboards</Text>
+            <Text style={styles.tableDesc}>Rankings and competitions</Text>
+          </View>
+          <View style={styles.tableItem}>
+            <Text style={styles.tableName}>• achievements</Text>
+            <Text style={styles.tableDesc}>Achievement definitions</Text>
+          </View>
+          <View style={styles.tableItem}>
+            <Text style={styles.tableName}>• user_achievements</Text>
+            <Text style={styles.tableDesc}>User achievement progress</Text>
           </View>
         </View>
       </View>
