@@ -1,0 +1,645 @@
+import { WorkoutSession, WorkoutType, WorkoutMetrics, WorkoutSummary } from '@/types/workout';
+import { Platform } from 'react-native';
+import * as Location from 'expo-location';
+import { supabase } from '@/lib/supabase';
+
+export class WorkoutService {
+  private static instance: WorkoutService;
+  private currentSession: WorkoutSession | null = null;
+  private intervalId: NodeJS.Timeout | null = null;
+  private listeners: ((session: WorkoutSession | null) => void)[] = [];
+  private locationSubscription: Location.LocationSubscription | null = null;
+  private lastUpdateTime: number = 0;
+  private routePoints: any[] = [];
+
+  private constructor() {}
+
+  static getInstance(): WorkoutService {
+    if (!WorkoutService.instance) {
+      WorkoutService.instance = new WorkoutService();
+    }
+    return WorkoutService.instance;
+  }
+
+  // Start a new workout session
+  async startWorkout(workoutType: WorkoutType['id']): Promise<WorkoutSession> {
+    if (this.currentSession?.isActive) {
+      throw new Error('A workout is already in progress');
+    }
+
+    console.log('🏃‍♂️ Starting workout:', workoutType);
+
+    // Request location permissions for outdoor workouts
+    if (workoutType.includes('outdoor') && Platform.OS !== 'web') {
+      console.log('📱 Requesting location permissions...');
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      console.log('📱 Location permission status:', status);
+      
+      if (status !== 'granted') {
+        console.error('❌ Location permission denied');
+        throw new Error('Location permission is required for accurate tracking');
+      }
+      
+      // Check if location services are enabled
+      const enabled = await Location.hasServicesEnabledAsync();
+      console.log('📱 Location services enabled:', enabled);
+      
+      if (!enabled) {
+        console.warn('⚠️ Location services are disabled on the device');
+        // We'll continue anyway, but log the warning
+      }
+    }
+
+    const session: WorkoutSession = {
+      id: `workout-${Date.now()}`,
+      type: workoutType,
+      startTime: new Date(),
+      isActive: true,
+      isPaused: false,
+      metrics: {
+        duration: 0,
+        distance: 0,
+        pace: 0,
+        speed: 0,
+        calories: 0,
+        maxSpeed: 0,
+      },
+      route: [],
+    };
+
+    this.currentSession = session;
+    this.lastUpdateTime = Date.now();
+    this.routePoints = [];
+    this.startTracking();
+    this.notifyListeners();
+
+    console.log('✅ Workout started successfully:', workoutType);
+    return session;
+  }
+
+  // Pause the current workout
+  pauseWorkout(): void {
+    if (!this.currentSession?.isActive) return;
+
+    this.currentSession.isPaused = true;
+    this.stopTracking();
+    this.notifyListeners();
+    console.log('⏸️ Workout paused');
+  }
+
+  // Resume the current workout
+  resumeWorkout(): void {
+    if (!this.currentSession?.isActive || !this.currentSession.isPaused) return;
+
+    this.currentSession.isPaused = false;
+    this.lastUpdateTime = Date.now();
+    this.startTracking();
+    this.notifyListeners();
+    console.log('▶️ Workout resumed');
+  }
+
+  // End the current workout
+  async endWorkout(): Promise<WorkoutSummary | null> {
+    if (!this.currentSession) {
+      console.warn('No active workout session to end');
+      return null;
+    }
+
+    console.log('🏁 Ending workout session:', this.currentSession.id);
+
+    this.currentSession.isActive = false;
+    this.currentSession.endTime = new Date();
+    this.stopTracking();
+
+    // Generate summary with current session data
+    const summary = await this.generateWorkoutSummary(this.currentSession);
+    
+    console.log('📊 Generated workout summary:', summary);
+
+    // Only save workouts that are at least 3 minutes long
+    if (summary.session.metrics.duration >= 180) {
+      // Save workout to database and update user stats
+      await this.saveWorkoutAndUpdateStats(this.currentSession, summary);
+    } else {
+      console.log('⏱️ Workout too short (< 3 minutes), not saving to database');
+    }
+
+    const completedSession = this.currentSession;
+    this.currentSession = null;
+    this.notifyListeners();
+
+    console.log('✅ Workout completed successfully');
+    return summary;
+  }
+
+  // Get current workout session
+  getCurrentSession(): WorkoutSession | null {
+    return this.currentSession;
+  }
+
+  // Add listener for workout updates
+  addListener(listener: (session: WorkoutSession | null) => void): void {
+    this.listeners.push(listener);
+  }
+
+  // Remove listener
+  removeListener(listener: (session: WorkoutSession | null) => void): void {
+    const index = this.listeners.indexOf(listener);
+    if (index > -1) {
+      this.listeners.splice(index, 1);
+    }
+  }
+
+  // Start tracking workout metrics
+  private startTracking(): void {
+    if (this.intervalId) return;
+
+    console.log('📊 Starting workout metrics tracking');
+
+    // Update metrics every second for real-time updates
+    this.intervalId = setInterval(() => {
+      if (this.currentSession && this.currentSession.isActive && !this.currentSession.isPaused) {
+        this.updateMetrics();
+      }
+    }, 1000);
+
+    // Start location tracking for outdoor workouts
+    if (this.currentSession?.type.includes('outdoor') && Platform.OS !== 'web') {
+      this.startLocationTracking();
+    }
+  }
+
+  // Stop tracking
+  private stopTracking(): void {
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+      console.log('📊 Stopped workout metrics tracking');
+    }
+
+    if (this.locationSubscription) {
+      this.locationSubscription.remove();
+      this.locationSubscription = null;
+      console.log('📍 Stopped location tracking');
+    }
+  }
+
+  // Update workout metrics
+  private updateMetrics(): void {
+    if (!this.currentSession) return;
+
+    const now = Date.now();
+    const deltaTime = (now - this.lastUpdateTime) / 1000; // seconds since last update
+    this.lastUpdateTime = now;
+
+    // Calculate total elapsed time (excluding paused time)
+    const totalElapsed = (now - this.currentSession.startTime.getTime()) / 1000;
+    
+    // Update duration
+    this.currentSession.metrics.duration = totalElapsed;
+    
+    // Update timestamp
+    this.currentSession.metrics.timestamp = new Date();
+    
+    // Notify listeners
+    this.notifyListeners();
+
+    // Debug logging every 5 seconds
+    if (Math.floor(totalElapsed) % 5 === 0) {
+      console.log('📊 Metrics update:', {
+        duration: Math.round(this.currentSession.metrics.duration),
+        distance: Math.round(this.currentSession.metrics.distance),
+        speed: this.currentSession.metrics.speed.toFixed(1),
+        pace: this.currentSession.metrics.pace.toFixed(2),
+        routePoints: this.routePoints.length,
+      });
+    }
+  }
+
+  // Start location tracking
+  private async startLocationTracking(): Promise<void> {
+    try {
+      console.log('📍 Starting location tracking with high accuracy settings');
+      
+      // Get current location first to check if we can get a position
+      try {
+        const currentLocation = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.BestForNavigation
+        });
+        console.log('📍 Initial location acquired:', {
+          lat: currentLocation.coords.latitude.toFixed(6),
+          lng: currentLocation.coords.longitude.toFixed(6),
+          accuracy: currentLocation.coords.accuracy ? `${currentLocation.coords.accuracy.toFixed(1)}m` : 'unknown'
+        });
+      } catch (locError) {
+        console.error('❌ Failed to get initial location:', locError);
+      }
+      
+      this.locationSubscription = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.BestForNavigation,
+          timeInterval: 1000, // Update every second
+          distanceInterval: 1, // Update every meter
+        },
+        (location) => {
+          console.log('📍 handleLocationUpdate called with new location data');
+          this.handleLocationUpdate(location);
+        }
+      );
+      
+      console.log('✅ Location tracking started successfully');
+    } catch (error) {
+      console.error('❌ Failed to start location tracking:', error);
+    }
+  }
+
+  // Handle location updates
+  private handleLocationUpdate(location: Location.LocationObject): void {
+    console.log('📍 Location update received:', {
+      lat: location.coords.latitude.toFixed(6),
+      lng: location.coords.longitude.toFixed(6),
+      accuracy: location.coords.accuracy ? `${location.coords.accuracy.toFixed(1)}m` : 'unknown',
+      speed: location.coords.speed !== null ? `${location.coords.speed.toFixed(2)} m/s` : 'null',
+      altitude: location.coords.altitude !== null ? `${location.coords.altitude.toFixed(1)}m` : 'null',
+      timestamp: new Date(location.timestamp).toISOString()
+    });
+    
+    if (!this.currentSession || !this.currentSession.isActive || this.currentSession.isPaused) {
+      console.log('📍 Ignoring location update - workout inactive or paused');
+      return;
+    }
+
+    const locationPoint = {
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+      timestamp: new Date(),
+      altitude: location.coords.altitude || undefined,
+      speed: location.coords.speed || undefined,
+    };
+
+    this.routePoints.push(locationPoint);
+    this.currentSession.route = [...this.routePoints];
+    console.log(`📍 Added point to route, now have ${this.routePoints.length} points`);
+
+    // Calculate distance if we have a previous location
+    if (this.routePoints.length > 1) {
+      const previousPoint = this.routePoints[this.routePoints.length - 2];
+      console.log('📏 Calculating distance between:', {
+        prev: {
+          lat: previousPoint.latitude.toFixed(6),
+          lng: previousPoint.longitude.toFixed(6)
+        },
+        current: {
+          lat: locationPoint.latitude.toFixed(6),
+          lng: locationPoint.longitude.toFixed(6)
+        }
+      });
+      
+      const distance = this.calculateDistance(
+        previousPoint.latitude,
+        previousPoint.longitude,
+        locationPoint.latitude,
+        locationPoint.longitude
+      );
+      
+      console.log(`📏 Calculated distance: ${distance.toFixed(2)}m`);
+      
+      // Only add distance if it's reasonable (to filter out GPS jumps)
+      if (distance < 50) { // Max 50 meters per second (180 km/h)
+        this.currentSession.metrics.distance += distance;
+        console.log(`📏 Updated total distance: ${this.currentSession.metrics.distance.toFixed(2)}m`);
+      } else {
+        console.log(`⚠️ Distance jump detected (${distance.toFixed(2)}m), ignoring`);
+      }
+    }
+
+    // Update speed directly from GPS if available
+    if (location.coords.speed !== null && location.coords.speed >= 0) {
+      // Convert m/s to km/h for display
+      const speedKmh = location.coords.speed * 3.6;
+      console.log(`🏎️ Speed from GPS: ${location.coords.speed.toFixed(2)} m/s = ${speedKmh.toFixed(2)} km/h`);
+      
+      this.currentSession.metrics.speed = speedKmh;
+      
+      // Update max speed
+      if (speedKmh > (this.currentSession.metrics.maxSpeed || 0)) {
+        this.currentSession.metrics.maxSpeed = speedKmh;
+        console.log(`🏎️ New max speed: ${speedKmh.toFixed(2)} km/h`);
+      }
+      
+      // Calculate pace (min/km) from speed
+      if (speedKmh > 0) {
+        // 60 / speed(km/h) = pace(min/km)
+        const pace = 60 / speedKmh;
+        this.currentSession.metrics.pace = pace;
+        console.log(`⏱️ Calculated pace: ${pace.toFixed(2)} min/km`);
+      } else {
+        console.log('⏱️ Speed is zero or negative, cannot calculate pace');
+      }
+    } else {
+      console.log('⚠️ No speed data available from GPS');
+    }
+
+    this.notifyListeners();
+  }
+
+  // Calculate distance between two coordinates using Haversine formula
+  private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ/2) * Math.sin(Δλ/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+    return R * c;
+  }
+
+  // Generate workout summary
+  private async generateWorkoutSummary(session: WorkoutSession): Promise<WorkoutSummary> {
+    console.log('📋 Generating workout summary for session:', session.id);
+    
+    // Ensure we have valid metrics
+    const metrics = session.metrics || {
+      duration: 0,
+      distance: 0,
+      pace: 0,
+      speed: 0,
+      calories: 0,
+    };
+
+    // Calculate achievements and XP
+    const achievements: string[] = [];
+    let xpGained = 0;
+
+    // MINIMUM DURATION CHECK: Only award XP for workouts 3 minutes or longer
+    const minimumDuration = 180; // 3 minutes in seconds
+    if (metrics.duration < minimumDuration) {
+      console.log(`⏱️ Workout too short (${Math.round(metrics.duration)}s < ${minimumDuration}s), no XP awarded`);
+      
+      return {
+        session: {
+          ...session,
+          metrics: {
+            ...metrics,
+            duration: Math.max(0, metrics.duration),
+            distance: Math.max(0, metrics.distance),
+            pace: Math.max(0, metrics.pace),
+            speed: Math.max(0, metrics.speed),
+            calories: 0, // Set to 0 since we're not tracking calories
+          }
+        },
+        achievements: [],
+        xpGained: 0, // No XP for short workouts
+        questsCompleted: 0,
+        personalBests: [],
+      };
+    }
+
+    // Distance achievements (only for meaningful distances)
+    if (metrics.distance >= 1000) achievements.push('1K Completed');
+    if (metrics.distance >= 2000) achievements.push('2K Warrior');
+    if (metrics.distance >= 5000) achievements.push('5K Champion');
+    if (metrics.distance >= 10000) achievements.push('10K Legend');
+
+    // Duration achievements
+    if (metrics.duration >= 600) achievements.push('10 Minute Runner');
+    if (metrics.duration >= 1800) achievements.push('30 Minute Endurance');
+    if (metrics.duration >= 3600) achievements.push('1 Hour Marathon');
+
+    // Speed achievements
+    if (metrics.maxSpeed && metrics.maxSpeed >= 12) achievements.push('Speed Demon');
+    if (metrics.maxSpeed && metrics.maxSpeed >= 15) achievements.push('Lightning Runner');
+    if (metrics.maxSpeed && metrics.maxSpeed >= 18) achievements.push('Sonic Boom');
+
+    // IMPROVED XP CALCULATION - Based only on distance and duration
+    const durationMinutes = metrics.duration / 60;
+    
+    // Base XP: 10 XP for completing a 3+ minute workout
+    const baseXP = 10;
+    
+    // Duration XP: 2 XP per minute
+    const durationXP = Math.round(durationMinutes * 2);
+    
+    // Distance bonus: 1 XP per 200m
+    const distanceXP = Math.round(metrics.distance / 200);
+    
+    // Achievement bonus: 15 XP per achievement
+    const achievementXP = achievements.length * 15;
+    
+    // Workout type multiplier
+    let typeMultiplier = 1.0;
+    switch (session.type) {
+      case 'outdoor_run':
+        typeMultiplier = 1.2; // 20% bonus for outdoor running
+        break;
+      case 'indoor_run':
+        typeMultiplier = 1.1; // 10% bonus for indoor running
+        break;
+      case 'outdoor_walk':
+        typeMultiplier = 1.0; // Base rate for walking
+        break;
+      case 'indoor_walk':
+        typeMultiplier = 0.9; // Slightly less for indoor walking
+        break;
+    }
+    
+    // Calculate total XP with type multiplier
+    const rawXP = baseXP + durationXP + distanceXP + achievementXP;
+    xpGained = Math.round(rawXP * typeMultiplier);
+    
+    // Cap XP to prevent excessive gains (max 100 XP per workout)
+    xpGained = Math.min(xpGained, 100);
+
+    console.log('🧮 XP Calculation:', {
+      duration: `${durationMinutes.toFixed(1)} min`,
+      baseXP,
+      durationXP,
+      distanceXP,
+      achievementXP,
+      typeMultiplier,
+      rawXP,
+      finalXP: xpGained,
+      achievements: achievements.length
+    });
+
+    // Calculate calories (simple estimate based on distance)
+    // Average calorie burn is roughly 60-70 calories per km for running
+    const estimatedCalories = Math.round(metrics.distance / 1000 * 65);
+
+    const summary: WorkoutSummary = {
+      session: {
+        ...session,
+        metrics: {
+          ...metrics,
+          // Ensure all metrics have valid values
+          duration: Math.max(0, metrics.duration),
+          distance: Math.max(0, metrics.distance),
+          pace: Math.max(0, metrics.pace),
+          speed: Math.max(0, metrics.speed),
+          calories: estimatedCalories,
+          maxSpeed: metrics.maxSpeed || 0,
+        }
+      },
+      achievements,
+      xpGained,
+      questsCompleted: Math.floor(metrics.distance / 1000), // 1 quest per 1km
+      personalBests: [], // Would compare with historical data
+    };
+
+    console.log('✅ Generated summary:', {
+      duration: `${(summary.session.metrics.duration / 60).toFixed(1)} min`,
+      distance: `${(summary.session.metrics.distance / 1000).toFixed(2)} km`,
+      xpGained: summary.xpGained,
+      achievements: summary.achievements.length,
+      meetsMinimum: summary.session.metrics.duration >= minimumDuration
+    });
+
+    return summary;
+  }
+
+  // Save workout to database and update user stats
+  private async saveWorkoutAndUpdateStats(session: WorkoutSession, summary: WorkoutSummary): Promise<void> {
+    try {
+      console.log('💾 Saving workout and updating user stats');
+
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.warn('No authenticated user, skipping database save');
+        return;
+      }
+
+      // Only save to database and update stats if workout meets minimum duration
+      if (summary.xpGained === 0) {
+        console.log('⏱️ Workout too short, skipping database save and stat updates');
+        return;
+      }
+
+      // Save workout session to database
+      const { data: workoutData, error: workoutError } = await supabase
+        .rpc('save_workout_session', {
+          p_user_id: user.id,
+          p_start_time: session.startTime.toISOString(),
+          p_end_time: session.endTime?.toISOString() || new Date().toISOString(),
+          p_total_distance: Math.round(session.metrics.distance),
+          p_total_duration: Math.round(session.metrics.duration),
+          p_average_pace: session.metrics.pace || null,
+          p_max_speed: session.metrics.maxSpeed || null,
+          p_average_heart_rate: null, // Not tracking heart rate
+          p_max_heart_rate: null, // Not tracking heart rate
+          p_calories_burned: session.metrics.calories,
+          p_elevation_gain: 0 // Not tracking elevation
+        });
+
+      if (workoutError) {
+        console.error('Error saving workout session:', workoutError);
+      } else {
+        console.log('✅ Workout session saved to database');
+      }
+
+      // Update user stats with XP and workout data
+      const { data: currentStats, error: statsError } = await supabase
+        .from('user_stats')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (statsError) {
+        console.error('Error fetching current stats:', statsError);
+        return;
+      }
+
+      if (currentStats) {
+        // Calculate new totals
+        const newTotalDistance = currentStats.total_distance + Math.round(session.metrics.distance);
+        const newTotalRuns = currentStats.total_runs + 1;
+        const newTotalTime = currentStats.total_time + Math.round(session.metrics.duration);
+        const newExperience = currentStats.experience + summary.xpGained;
+
+        // Check for level up
+        const { newLevel, skillPointsGained } = this.calculateLevelUp(currentStats.level, newExperience);
+
+        // Update user stats
+        const { error: updateError } = await supabase
+          .from('user_stats')
+          .update({
+            total_distance: newTotalDistance,
+            total_runs: newTotalRuns,
+            total_time: newTotalTime,
+            experience: newExperience,
+            level: newLevel,
+            skill_points: currentStats.skill_points + skillPointsGained,
+          })
+          .eq('user_id', user.id);
+
+        if (updateError) {
+          console.error('Error updating user stats:', updateError);
+        } else {
+          console.log('✅ User stats updated:', {
+            xpGained: summary.xpGained,
+            newLevel: newLevel,
+            skillPointsGained: skillPointsGained,
+            totalDistance: newTotalDistance,
+            totalRuns: newTotalRuns
+          });
+        }
+
+        // Check for new achievements
+        try {
+          const { data: newAchievements, error: achievementError } = await supabase
+            .rpc('check_and_award_achievements', { p_user_id: user.id });
+
+          if (achievementError) {
+            console.error('Error checking achievements:', achievementError);
+          } else if (newAchievements && newAchievements.length > 0) {
+            console.log('🏆 New achievements unlocked:', newAchievements.length);
+          }
+        } catch (achievementError) {
+          console.error('Error in achievement check:', achievementError);
+        }
+      }
+
+    } catch (error) {
+      console.error('Error saving workout and updating stats:', error);
+    }
+  }
+
+  // Calculate level progression
+  private calculateLevelUp(currentLevel: number, newExperience: number): { newLevel: number; skillPointsGained: number } {
+    let level = currentLevel;
+    let skillPointsGained = 0;
+
+    // Experience required for each level (exponential growth)
+    const getExpForLevel = (lvl: number) => Math.floor(100 * Math.pow(1.5, lvl - 1));
+
+    while (true) {
+      const expRequired = getExpForLevel(level + 1);
+      if (newExperience >= expRequired) {
+        level++;
+        skillPointsGained += 2; // 2 skill points per level
+      } else {
+        break;
+      }
+    }
+
+    return { newLevel: level, skillPointsGained };
+  }
+
+  // Notify all listeners
+  private notifyListeners(): void {
+    this.listeners.forEach(listener => {
+      try {
+        listener(this.currentSession);
+      } catch (error) {
+        console.error('Error in workout listener:', error);
+      }
+    });
+  }
+}
+
+export default WorkoutService;
