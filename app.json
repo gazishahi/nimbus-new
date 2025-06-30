@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.nimbus.fitness",
+      "bundleIdentifier": "com.gazishahi.nimbusapp",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Nimbus Fitness uses your location to track your workout distance and route.",
