@@ -166,12 +166,12 @@ const styles = StyleSheet.create({
   },
   imageContainer: {
     alignItems: 'center',
-    paddingVertical: 20,
-    marginTop: 20,
+    paddingVertical: 10,
+    marginTop: 10,
   },
   circleImage: {
-    width: 50,
-    height: 50,
+    width: 100,
+    height: 100,
   },
   bottomSpacing: {
     height: 100,
