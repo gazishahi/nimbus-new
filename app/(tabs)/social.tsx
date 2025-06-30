@@ -1,137 +1,29 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ChartBar as BarChart3, Medal, Trophy, Users, Zap, Shield, MapPin, RefreshCw } from 'lucide-react-native';
 import { usePixelFont } from '@/hooks/usePixelFont';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { useLeaderboard } from '@/hooks/useLeaderboard';
 import { Colors } from '@/constants/Colors';
 
 export default function RankScreen() {
   const fontsLoaded = usePixelFont();
   const { user } = useAuth();
-  const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month' | 'total'>('week');
-  const [leaderboardData, setLeaderboardData] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const { 
+    leaderboard, 
+    userRank, 
+    loading, 
+    error, 
+    selectedPeriod, 
+    setSelectedPeriod, 
+    refreshLeaderboard,
+    isRefreshing
+  } = useLeaderboard();
 
-  useEffect(() => {
-    fetchLeaderboardData();
-  }, [selectedPeriod]);
-
-  const fetchLeaderboardData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      console.log('🏆 Fetching leaderboard data for period:', selectedPeriod);
-      
-      // For this implementation, we'll use the user_stats table directly
-      // In a production app, you would have a dedicated leaderboards table that's updated regularly
-      const { data, error } = await supabase
-        .from('user_stats')
-        .select(`
-          id,
-          user_id,
-          level,
-          character_class,
-          total_distance,
-          total_runs,
-          profiles:user_id(
-            username,
-            display_name
-          )
-        `)
-        .order('total_distance', { ascending: false })
-        .limit(20);
-      
-      if (error) {
-        console.error('Error fetching leaderboard:', error);
-        setError('Failed to load leaderboard data');
-        return;
-      }
-      
-      if (!data || data.length === 0) {
-        console.log('🏆 No leaderboard data found');
-        setLeaderboardData([]);
-        setError('No leaderboard data available yet. Complete workouts to appear on the leaderboard!');
-        return;
-      }
-      
-      // Transform the data into our leaderboard format
-      const transformedData = data.map((entry, index) => {
-        // Get character class info
-        const characterClass = getCharacterClassInfo(entry.character_class || 'speed-runner');
-        
-        // For this demo, we'll simulate weekly and monthly data based on total
-        // In a real app, you would have separate queries for each period
-        const totalDistance = entry.total_distance || 0;
-        const weeklyDistance = Math.round(totalDistance * (Math.random() * 0.2 + 0.05)); // 5-25% of total
-        const monthlyDistance = Math.round(totalDistance * (Math.random() * 0.4 + 0.2)); // 20-60% of total
-        
-        return {
-          userId: entry.user_id,
-          username: entry.profiles?.username || entry.profiles?.display_name || 'Unknown Runner',
-          level: entry.level || 1,
-          characterClass,
-          weeklyDistance,
-          monthlyDistance,
-          totalDistance,
-          rank: index + 1 // Rank based on the order returned from the query
-        };
-      });
-      
-      console.log(`🏆 Fetched ${transformedData.length} leaderboard entries`);
-      setLeaderboardData(transformedData);
-      
-    } catch (err) {
-      console.error('Error in fetchLeaderboardData:', err);
-      setError('An unexpected error occurred');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  const handleRefresh = () => {
-    setRefreshing(true);
-    fetchLeaderboardData();
-  };
-
-  // Helper function to get character class info
-  const getCharacterClassInfo = (classId: string) => {
-    switch (classId) {
-      case 'speed-runner':
-        return {
-          id: 'speed-runner',
-          name: 'Sky Sprinter',
-          color: Colors.classes.speedRunner,
-          icon: 'zap',
-        };
-      case 'endurance-master':
-        return {
-          id: 'endurance-master',
-          name: 'Storm Chaser',
-          color: Colors.classes.enduranceMaster,
-          icon: 'shield',
-        };
-      case 'explorer':
-        return {
-          id: 'explorer',
-          name: 'Cloud Walker',
-          color: Colors.classes.explorer,
-          icon: 'map-pin',
-        };
-      default:
-        return {
-          id: 'speed-runner',
-          name: 'Sky Sprinter',
-          color: Colors.classes.speedRunner,
-          icon: 'zap',
-        };
-    }
-  };
+  if (!fontsLoaded) {
+    return null;
+  }
 
   const getClassIcon = (iconName: string, color: string) => {
     const iconProps = { size: 16, color };
@@ -170,33 +62,57 @@ export default function RankScreen() {
     return `${meters}m`;
   };
 
-  // Find current user in leaderboard
-  const currentUser = user ? leaderboardData.find(entry => entry.userId === user.id) : null;
-  
-  // Sort leaderboard based on selected period
-  const sortedLeaderboard = [...leaderboardData].sort((a, b) => {
-    switch (selectedPeriod) {
-      case 'week':
-        return b.weeklyDistance - a.weeklyDistance;
-      case 'month':
-        return b.monthlyDistance - a.monthlyDistance;
-      case 'total':
-        return b.totalDistance - a.totalDistance;
+  // Get character class info
+  const getCharacterClassInfo = (classId: string) => {
+    switch (classId) {
+      case 'speed-runner':
+        return {
+          id: 'speed-runner',
+          name: 'Sky Sprinter',
+          color: Colors.classes.speedRunner,
+          icon: 'zap',
+        };
+      case 'endurance-master':
+        return {
+          id: 'endurance-master',
+          name: 'Storm Chaser',
+          color: Colors.classes.enduranceMaster,
+          icon: 'shield',
+        };
+      case 'explorer':
+        return {
+          id: 'explorer',
+          name: 'Cloud Walker',
+          color: Colors.classes.explorer,
+          icon: 'map-pin',
+        };
       default:
-        return a.rank - b.rank;
+        return {
+          id: 'speed-runner',
+          name: 'Sky Sprinter',
+          color: Colors.classes.speedRunner,
+          icon: 'zap',
+        };
     }
-  }).map((entry, index) => ({
-    ...entry,
-    rank: index + 1 // Update rank based on new sorting
-  }));
+  };
 
-  if (!fontsLoaded) {
-    return null;
-  }
+  // Find current user in leaderboard
+  const currentUserEntry = user ? leaderboard.find(entry => entry.userId === user.id) : null;
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.scrollContainer} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={refreshLeaderboard}
+            colors={[Colors.primary.skyBlue]}
+            tintColor={Colors.primary.skyBlue}
+          />
+        }
+      >
         {/* Header */}
         <View style={styles.header}>
           <BarChart3 size={32} color={Colors.primary.skyBlue} />
@@ -205,7 +121,7 @@ export default function RankScreen() {
         </View>
 
         {/* Loading State */}
-        {loading && !refreshing && (
+        {loading && !isRefreshing && (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={Colors.primary.skyBlue} />
             <Text style={styles.loadingText}>Loading leaderboard...</Text>
@@ -216,7 +132,7 @@ export default function RankScreen() {
         {error && !loading && (
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>{error}</Text>
-            <TouchableOpacity style={styles.refreshButton} onPress={handleRefresh}>
+            <TouchableOpacity style={styles.refreshButton} onPress={refreshLeaderboard}>
               <RefreshCw size={16} color={Colors.text.primary} />
               <Text style={styles.refreshText}>Refresh</Text>
             </TouchableOpacity>
@@ -226,36 +142,35 @@ export default function RankScreen() {
         {!loading && !error && (
           <>
             {/* Current User Stats */}
-            {currentUser && (
+            {currentUserEntry && (
               <View style={styles.currentUserPanel}>
                 <Text style={styles.sectionTitle}>YOUR RANKING</Text>
                 <View style={styles.currentUserCard}>
                   <LinearGradient
-                    colors={[currentUser.characterClass.color, Colors.background.overcast]}
+                    colors={[getCharacterClassInfo(currentUserEntry.characterClass).color, Colors.background.overcast]}
                     style={styles.userGradient}
                   >
                     <View style={styles.userContent}>
                       <View style={styles.rankContainer}>
-                        {getRankIcon(currentUser.rank)}
+                        {getRankIcon(currentUserEntry.rank)}
                       </View>
                       
                       <View style={styles.userInfo}>
                         <View style={styles.userHeader}>
-                          <Text style={styles.username}>{currentUser.username}</Text>
-                          {getClassIcon(currentUser.characterClass.icon, currentUser.characterClass.color)}
+                          <Text style={styles.username}>{currentUserEntry.username}</Text>
+                          {getClassIcon(
+                            getCharacterClassInfo(currentUserEntry.characterClass).icon, 
+                            getCharacterClassInfo(currentUserEntry.characterClass).color
+                          )}
                         </View>
-                        <Text style={styles.userLevel}>Level {currentUser.level}</Text>
-                        <Text style={styles.className}>{currentUser.characterClass.name}</Text>
+                        <Text style={styles.userLevel}>Level {currentUserEntry.level}</Text>
+                        <Text style={styles.className}>{getCharacterClassInfo(currentUserEntry.characterClass).name}</Text>
                       </View>
                       
                       <View style={styles.statsContainer}>
                         <View style={styles.statItem}>
                           <Text style={styles.statValue}>
-                            {formatDistance(
-                              selectedPeriod === 'week' ? currentUser.weeklyDistance : 
-                              selectedPeriod === 'month' ? currentUser.monthlyDistance : 
-                              currentUser.totalDistance
-                            )}
+                            {formatDistance(currentUserEntry.value)}
                           </Text>
                           <Text style={styles.statLabel}>
                             {selectedPeriod.toUpperCase()}
@@ -265,6 +180,17 @@ export default function RankScreen() {
                     </View>
                   </LinearGradient>
                 </View>
+              </View>
+            )}
+
+            {/* User Rank Display (when not in top entries) */}
+            {user && !currentUserEntry && userRank && (
+              <View style={styles.userRankPanel}>
+                <Text style={styles.userRankTitle}>YOUR CURRENT RANK</Text>
+                <Text style={styles.userRankValue}>#{userRank}</Text>
+                <Text style={styles.userRankDescription}>
+                  Complete more workouts to climb the leaderboard!
+                </Text>
               </View>
             )}
 
@@ -296,12 +222,12 @@ export default function RankScreen() {
             {/* Refresh Button */}
             <TouchableOpacity 
               style={styles.refreshButtonContainer} 
-              onPress={handleRefresh}
-              disabled={refreshing}
+              onPress={refreshLeaderboard}
+              disabled={isRefreshing}
             >
               <RefreshCw size={16} color={Colors.text.accent} />
               <Text style={styles.refreshButtonText}>
-                {refreshing ? 'Refreshing...' : 'Refresh Leaderboard'}
+                {isRefreshing ? 'Refreshing...' : 'Refresh Leaderboard'}
               </Text>
             </TouchableOpacity>
 
@@ -311,18 +237,19 @@ export default function RankScreen() {
                 {selectedPeriod.toUpperCase()} RANKINGS
               </Text>
               
-              {sortedLeaderboard.length > 0 ? (
-                sortedLeaderboard.map((entry) => {
+              {leaderboard.length > 0 ? (
+                leaderboard.map((entry) => {
                   const isCurrentUser = user && entry.userId === user.id;
+                  const classInfo = getCharacterClassInfo(entry.characterClass);
                   
                   return (
                     <View 
-                      key={entry.userId} 
+                      key={entry.id} 
                       style={[styles.leaderboardItem, isCurrentUser && styles.currentUserItem]}
                     >
                       <LinearGradient
                         colors={isCurrentUser ? 
-                          [entry.characterClass.color, Colors.background.overcast] : 
+                          [classInfo.color, Colors.background.overcast] : 
                           [Colors.background.storm, Colors.background.overcast]
                         }
                         style={styles.itemGradient}
@@ -337,20 +264,16 @@ export default function RankScreen() {
                               <Text style={[styles.username, isCurrentUser && styles.currentUserText]}>
                                 {entry.username}
                               </Text>
-                              {getClassIcon(entry.characterClass.icon, entry.characterClass.color)}
+                              {getClassIcon(classInfo.icon, classInfo.color)}
                             </View>
                             <Text style={styles.playerLevel}>Level {entry.level}</Text>
-                            <Text style={styles.className}>{entry.characterClass.name}</Text>
+                            <Text style={styles.className}>{classInfo.name}</Text>
                           </View>
                           
                           <View style={styles.statsContainer}>
                             <View style={styles.statItem}>
                               <Text style={styles.statValue}>
-                                {formatDistance(
-                                  selectedPeriod === 'week' ? entry.weeklyDistance : 
-                                  selectedPeriod === 'month' ? entry.monthlyDistance : 
-                                  entry.totalDistance
-                                )}
+                                {formatDistance(entry.value)}
                               </Text>
                               <Text style={styles.statLabel}>
                                 {selectedPeriod.toUpperCase()}
@@ -500,6 +423,32 @@ const styles = StyleSheet.create({
   userContent: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  userRankPanel: {
+    backgroundColor: Colors.card.background,
+    borderWidth: 3,
+    borderColor: Colors.primary.skyBlue,
+    padding: 20,
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  userRankTitle: {
+    fontFamily: 'PressStart2P',
+    fontSize: 12,
+    color: Colors.text.accent,
+    marginBottom: 12,
+  },
+  userRankValue: {
+    fontFamily: 'PressStart2P',
+    fontSize: 24,
+    color: Colors.primary.skyBlue,
+    marginBottom: 12,
+  },
+  userRankDescription: {
+    fontFamily: 'PressStart2P',
+    fontSize: 10,
+    color: Colors.text.secondary,
+    textAlign: 'center',
   },
   periodContainer: {
     flexDirection: 'row',

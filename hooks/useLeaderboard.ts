@@ -10,6 +10,7 @@ export interface UseLeaderboardReturn {
   selectedPeriod: 'week' | 'month' | 'total';
   setSelectedPeriod: (period: 'week' | 'month' | 'total') => void;
   refreshLeaderboard: () => Promise<void>;
+  isRefreshing: boolean;
 }
 
 export function useLeaderboard(): UseLeaderboardReturn {
@@ -19,6 +20,7 @@ export function useLeaderboard(): UseLeaderboardReturn {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month' | 'total'>('week');
+  const [isRefreshing, setIsRefreshing] = useState(false);
   
   const leaderboardService = LeaderboardService.getInstance();
 
@@ -33,6 +35,8 @@ export function useLeaderboard(): UseLeaderboardReturn {
     try {
       setLoading(true);
       setError(null);
+      
+      console.log('🏆 Fetching leaderboard data for period:', selectedPeriod);
       
       // Fetch leaderboard data
       const data = await leaderboardService.getLeaderboard(selectedPeriod);
@@ -53,6 +57,7 @@ export function useLeaderboard(): UseLeaderboardReturn {
       setError('Failed to load leaderboard data');
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
   }, [user, selectedPeriod, leaderboardService]);
 
@@ -63,6 +68,8 @@ export function useLeaderboard(): UseLeaderboardReturn {
 
   const refreshLeaderboard = useCallback(async () => {
     try {
+      setIsRefreshing(true);
+      
       // First update the leaderboards
       await leaderboardService.updateLeaderboards();
       
@@ -71,6 +78,7 @@ export function useLeaderboard(): UseLeaderboardReturn {
     } catch (err) {
       console.error('Error refreshing leaderboard:', err);
       setError('Failed to refresh leaderboard');
+      setIsRefreshing(false);
     }
   }, [fetchLeaderboard, leaderboardService]);
 
@@ -81,6 +89,7 @@ export function useLeaderboard(): UseLeaderboardReturn {
     error,
     selectedPeriod,
     setSelectedPeriod,
-    refreshLeaderboard
+    refreshLeaderboard,
+    isRefreshing
   };
 }
