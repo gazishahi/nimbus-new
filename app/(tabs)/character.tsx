@@ -93,7 +93,7 @@ export default function CharacterScreen() {
       <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>NIMBUS CHARACTER</Text>
+          <Text style={styles.title}>HERO</Text>
           <Text style={styles.subtitle}>Your Cloud Running Journey</Text>
         </View>
 
