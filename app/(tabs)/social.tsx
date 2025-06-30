@@ -150,7 +150,7 @@ export default function RankScreen() {
         {/* Header */}
         <View style={styles.header}>
           <BarChart3 size={32} color={Colors.primary.skyBlue} />
-          <Text style={styles.title}>LEADERBOARD</Text>
+          <Text style={styles.title}>RANK</Text>
           <Text style={styles.subtitle}>Compete with Fellow Runners</Text>
         </View>
 
