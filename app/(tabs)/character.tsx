@@ -91,8 +91,8 @@ export default function CharacterScreen() {
         </View>
 
           <View style={styles.setupActions}>
-        <Text style={styles.subtitle}>Supabase Organization Slug</Text>
-        <Text style={styles.subtitle}>uaisldekqkaansgnbfgs</Text>
+        <Text style={styles.subtitleAlt}>Supabase Organization Slug</Text>
+        <Text style={styles.subtitleAlt}>uaisldekqkaansgnbfgs</Text>
         </View>
 
           <View style={styles.bottomSpacing} />
@@ -127,8 +127,8 @@ export default function CharacterScreen() {
         </View>
 
         <View style={styles.setupActions}>
-        <Text style={styles.subtitle}>Supabase Organization Slug</Text>
-        <Text style={styles.subtitle}>uaisldekqkaansgnbfgs</Text>
+        <Text style={styles.subtitleAlt}>Supabase Organization Slug</Text>
+        <Text style={styles.subtitleAlt}>uaisldekqkaansgnbfgs</Text>
         </View>
 
         <View style={styles.bottomSpacing} />
