@@ -93,11 +93,6 @@ export default function UserProfile({ user, onLogout }: UserProfileProps) {
           <User size={20} color={Colors.text.secondary} />
           <Text style={styles.actionText}>Edit Profile</Text>
         </TouchableOpacity>
-
-        <TouchableOpacity style={styles.actionButton}>
-          <Trophy size={20} color={Colors.text.secondary} />
-          <Text style={styles.actionText}>Privacy Settings</Text>
-        </TouchableOpacity>
       </View>
 
       {/* Logout Button */}
