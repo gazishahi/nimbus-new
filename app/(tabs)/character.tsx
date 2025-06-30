@@ -165,7 +165,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   imageContainer: {
-    alignItems: 'top',
+    alignItems: 'center',
     paddingVertical: 0,
     marginTop: 0,
   },
