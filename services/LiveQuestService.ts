@@ -7,6 +7,7 @@ export class LiveQuestService {
   private static instance: LiveQuestService;
   private currentSession: LiveQuestSession | null = null;
   private questCheckInterval: NodeJS.Timeout | null = null;
+  private firstQuestTimer: NodeJS.Timeout | null = null;
   private listeners: ((session: LiveQuestSession) => void)[] = [];
 
   private constructor() {}
@@ -33,27 +34,33 @@ export class LiveQuestService {
       isActive: true,
     };
 
-    // Start quest generation immediately
+    // Start quest generation with 3-minute delay
     this.startQuestGeneration();
 
     this.notifyListeners();
     return this.currentSession;
   }
 
-  // Start generating and checking quests
+  // Start generating and checking quests with 3-minute delay
   private startQuestGeneration(): void {
     if (!this.currentSession?.isActive) return;
 
-    console.log('🎯 Starting quest generation and monitoring');
+    console.log('🎯 Starting quest generation with 3-minute delay');
     
-    // Generate first quest immediately
-    this.generateNewQuest();
-
-    // Check quest progress and generate new quests every 10 seconds
-    this.questCheckInterval = setInterval(() => {
-      this.checkQuestProgress();
-      this.maybeGenerateNewQuest();
-    }, 10000); // 10 seconds for responsive quest generation
+    // Set timer for first quest (3 minutes = 180,000 milliseconds)
+    this.firstQuestTimer = setTimeout(() => {
+      console.log('🎯 3 minutes elapsed, generating first quest');
+      
+      // Generate first quest
+      this.generateNewQuest();
+      
+      // Start regular quest checking and generation
+      this.questCheckInterval = setInterval(() => {
+        this.checkQuestProgress();
+        this.maybeGenerateNewQuest();
+      }, 10000); // 10 seconds for responsive quest generation
+      
+    }, 180000); // 3 minutes delay
   }
 
   // Generate a new quest based on current workout state
@@ -309,6 +316,12 @@ export class LiveQuestService {
 
     console.log('🎯 Ending quest session');
     this.currentSession.isActive = false;
+
+    // Clear both timers
+    if (this.firstQuestTimer) {
+      clearTimeout(this.firstQuestTimer);
+      this.firstQuestTimer = null;
+    }
 
     if (this.questCheckInterval) {
       clearInterval(this.questCheckInterval);
