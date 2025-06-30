@@ -6,7 +6,7 @@ export interface UseWorkoutReturn {
   currentSession: WorkoutSession | null;
   isActive: boolean;
   isPaused: boolean;
-  startWorkout: (type: WorkoutType['id']) => Promise<void>;
+  startWorkout: (type: WorkoutType['id']) => Promise<WorkoutSession | null>;
   pauseWorkout: () => void;
   resumeWorkout: () => void;
   endWorkout: () => Promise<WorkoutSummary | null>;
@@ -35,14 +35,16 @@ export function useWorkout(): UseWorkoutReturn {
     };
   }, [workoutService]);
 
-  const startWorkout = useCallback(async (type: WorkoutType['id']) => {
+  const startWorkout = useCallback(async (type: WorkoutType['id']): Promise<WorkoutSession | null> => {
     try {
       setError(null);
-      await workoutService.startWorkout(type);
+      const session = await workoutService.startWorkout(type);
+      return session; // Return the session object
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to start workout';
       setError(errorMessage);
       console.error('Error starting workout:', err);
+      return null;
     }
   }, [workoutService]);
 
