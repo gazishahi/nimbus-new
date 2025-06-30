@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, SafeAreaView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, SafeAreaView, Image } from 'react-native';
 import { usePixelFont } from '@/hooks/usePixelFont';
 import { useAuth } from '@/contexts/AuthContext';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -103,6 +103,15 @@ export default function CharacterScreen() {
         {/* Character Progression Component */}
         <CharacterProgression />
 
+        {/* Black Circle Image */}
+        <View style={styles.imageContainer}>
+          <Image 
+            source={require('@/assets/images/black_circle_360x360.png')}
+            style={styles.circleImage}
+            resizeMode="contain"
+          />
+        </View>
+
         <View style={styles.bottomSpacing} />
       </ScrollView>
     </SafeAreaView>
@@ -154,6 +163,15 @@ const styles = StyleSheet.create({
     color: Colors.text.secondary,
     marginBottom: 12,
     textAlign: 'center',
+  },
+  imageContainer: {
+    alignItems: 'center',
+    paddingVertical: 20,
+    marginTop: 20,
+  },
+  circleImage: {
+    width: 200,
+    height: 200,
   },
   bottomSpacing: {
     height: 100,
