@@ -4,11 +4,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Play, MapPin, Clock, Zap, TrendingUp, Info, X } from 'lucide-react-native';
 import { usePixelFont } from '@/hooks/usePixelFont';
 import { useWorkout } from '@/hooks/useWorkout';
+import { useLiveQuests } from '@/hooks/useLiveQuests';
 import { Colors } from '@/constants/Colors';
 import PixelButton from '@/components/PixelButton';
 import WorkoutTypeSelector from '@/components/WorkoutTypeSelector';
 import WorkoutMetrics from '@/components/WorkoutMetrics';
 import WorkoutControls from '@/components/WorkoutControls';
+import LiveQuestPanel from '@/components/LiveQuestPanel';
 import { WorkoutType } from '@/types/workout';
 
 export default function RunScreen() {
@@ -23,6 +25,15 @@ export default function RunScreen() {
     endWorkout, 
     error 
   } = useWorkout();
+  
+  const {
+    currentSession: questSession,
+    startQuestSession,
+    endQuestSession,
+    updateQuestProgress,
+    isSessionActive: isQuestSessionActive
+  } = useLiveQuests();
+
   const [selectedWorkoutType, setSelectedWorkoutType] = useState<WorkoutType['id']>('outdoor_run');
   const [workoutSummary, setWorkoutSummary] = useState<any>(null);
   const [showFeaturesModal, setShowFeaturesModal] = useState(false);
@@ -33,15 +44,44 @@ export default function RunScreen() {
     }
   }, [error]);
 
+  // Update quest progress when workout metrics change
+  useEffect(() => {
+    if (currentSession?.isActive && !currentSession.isPaused && questSession?.isActive) {
+      const metrics = {
+        distance: currentSession.metrics.distance,
+        duration: currentSession.metrics.duration,
+        pace: currentSession.metrics.pace,
+        speed: currentSession.metrics.speed / 3.6, // Convert km/h to m/s for quest system
+        heartRate: undefined, // Would come from HealthKit if available
+      };
+      
+      updateQuestProgress(metrics);
+    }
+  }, [currentSession?.metrics, questSession?.isActive, updateQuestProgress]);
+
   const handleStartWorkout = async () => {
     try {
-      await startWorkout(selectedWorkoutType);
+      const session = await startWorkout(selectedWorkoutType);
+      
+      // Start quest session after workout starts
+      if (session) {
+        console.log('🎯 Starting quest session for workout:', session.id);
+        startQuestSession(session.id);
+      }
     } catch (err) {
       console.error('Failed to start workout:', err);
     }
   };
 
   const handleEndWorkout = async () => {
+    // End quest session first
+    if (questSession?.isActive) {
+      console.log('🎯 Ending quest session');
+      const finalQuestSession = endQuestSession();
+      console.log('🎯 Final quest session:', finalQuestSession);
+    }
+    
+    // Then end workout
     const summary = await endWorkout();
     if (summary) {
       setWorkoutSummary(summary);
@@ -84,7 +124,7 @@ export default function RunScreen() {
                 <Play size={48} color={Colors.text.primary} />
                 <Text style={styles.startTitle}>START WORKOUT</Text>
                 <Text style={styles.startSubtitle}>
-                  Track your {selectedWorkoutType.replace('_', ' ')} with real-time metrics
+                  Track your {selectedWorkoutType.replace('_', ' ')} with real-time metrics and live quests
                 </Text>
                 <PixelButton
                   title="BEGIN TRACKING"
@@ -107,6 +147,12 @@ export default function RunScreen() {
           </>
         ) : (
           <>
+            {/* Live Quest Panel - Show when workout is active */}
+            <LiveQuestPanel 
+              session={questSession}
+              isVisible={isActive && isQuestSessionActive}
+            />
+
             {/* Active Workout Display */}
             <WorkoutMetrics 
               metrics={currentSession?.metrics}
@@ -193,6 +239,18 @@ export default function RunScreen() {
                 </View>
               )}
               
+              {/* Quest Summary */}
+              {questSession && questSession.completedQuests.length > 0 && (
+                <View style={styles.questSummaryContainer}>
+                  <Text style={styles.questSummaryTitle}>QUESTS COMPLETED</Text>
+                  <View style={styles.questSummaryStats}>
+                    <Text style={styles.questSummaryText}>
+                      {questSession.completedQuests.length} Quests • +{questSession.totalXpEarned} XP • +{questSession.totalCoinsEarned} Coins
+                    </Text>
+                  </View>
+                </View>
+              )}
+              
               {workoutSummary.achievements.length > 0 && (
                 <View style={styles.achievementsContainer}>
                   <Text style={styles.achievementsTitle}>ACHIEVEMENTS UNLOCKED</Text>
@@ -259,6 +317,29 @@ export default function RunScreen() {
                     <View style={styles.featureItem}>
                       <TrendingUp size={16} color={Colors.primary.skyBlue} />
                       <Text style={styles.featureText}>Accurate GPS-based Measurements</Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Live Quest Features */}
+                <View style={styles.featureSection}>
+                  <Text style={styles.featureSectionTitle}>LIVE QUEST SYSTEM</Text>
+                  <View style={styles.featuresList}>
+                    <View style={styles.featureItem}>
+                      <Zap size={16} color={Colors.accent.lightning} />
+                      <Text style={styles.featureText}>Dynamic challenges during workouts</Text>
+                    </View>
+                    <View style={styles.featureItem}>
+                      <Clock size={16} color={Colors.accent.sunset} />
+                      <Text style={styles.featureText}>Time-limited quest objectives</Text>
+                    </View>
+                    <View style={styles.featureItem}>
+                      <TrendingUp size={16} color={Colors.accent.rainGreen} />
+                      <Text style={styles.featureText}>Real-time progress tracking</Text>
+                    </View>
+                    <View style={styles.featureItem}>
+                      <Play size={16} color={Colors.primary.skyBlue} />
+                      <Text style={styles.featureText}>Instant XP and coin rewards</Text>
                     </View>
                   </View>
                 </View>
@@ -352,6 +433,7 @@ const styles = StyleSheet.create({
     color: Colors.text.secondary,
     textAlign: 'center',
     marginBottom: 24,
+    lineHeight: 16,
   },
   startButton: {
     minWidth: 200,
@@ -448,6 +530,30 @@ const styles = StyleSheet.create({
     fontFamily: 'PressStart2P',
     fontSize: 12,
     color: Colors.status.success,
+  },
+  questSummaryContainer: {
+    backgroundColor: Colors.background.twilight,
+    borderWidth: 2,
+    borderColor: Colors.card.border,
+    padding: 16,
+    marginBottom: 16,
+  },
+  questSummaryTitle: {
+    fontFamily: 'PressStart2P',
+    fontSize: 10,
+    color: Colors.text.accent,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  questSummaryStats: {
+    alignItems: 'center',
+  },
+  questSummaryText: {
+    fontFamily: 'PressStart2P',
+    fontSize: 9,
+    color: Colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 14,
   },
   achievementsContainer: {
     backgroundColor: Colors.background.twilight,
