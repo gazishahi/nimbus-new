@@ -21,10 +21,8 @@ export interface LiveQuest {
 export type LiveQuestType = 
   | 'distance_sprint' // Run X meters in Y seconds
   | 'pace_maintain' // Maintain pace for X seconds
-  | 'heart_rate_zone' // Stay in heart rate zone for X seconds
   | 'speed_burst' // Reach target speed for X seconds
-  | 'endurance_test' // Run continuously for X minutes
-  | 'interval_challenge'; // Complete X intervals of high intensity
+  | 'endurance_test'; // Run continuously for X minutes
 
 export interface QuestProgress {
   questId: string;

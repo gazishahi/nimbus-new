@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { LiveQuest } from '@/types/quests';
-import { Zap, Target, Heart, TrendingUp, Clock, Timer, CircleCheck as CheckCircle, Circle as XCircle } from 'lucide-react-native';
+import { Zap, Target, TrendingUp, Clock, Timer, CircleCheck as CheckCircle, Circle as XCircle } from 'lucide-react-native';
 import { Colors } from '@/constants/Colors';
 
 interface LiveQuestCardProps {
@@ -57,8 +57,6 @@ export default function LiveQuestCard({ quest, showTimer = true }: LiveQuestCard
         return <Zap size={iconSize} color={iconColor} />;
       case 'pace_maintain':
         return <Target size={iconSize} color={iconColor} />;
-      case 'heart_rate_zone':
-        return <Heart size={iconSize} color={iconColor} />;
       case 'speed_burst':
         return <TrendingUp size={iconSize} color={iconColor} />;
       case 'endurance_test':
@@ -73,7 +71,6 @@ export default function LiveQuestCard({ quest, showTimer = true }: LiveQuestCard
       case 'distance_sprint':
         return `${Math.round(quest.progress)}/${quest.target}m`;
       case 'pace_maintain':
-      case 'heart_rate_zone':
       case 'speed_burst':
       case 'endurance_test':
         return `${Math.round(quest.progress)}/${quest.target}s`;

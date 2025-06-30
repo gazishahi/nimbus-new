@@ -64,7 +64,6 @@ export class LiveQuestService {
     const questTypes: LiveQuestType[] = [
       'distance_sprint',
       'pace_maintain',
-      'heart_rate_zone',
       'speed_burst',
       'endurance_test',
     ];
@@ -102,8 +101,8 @@ export class LiveQuestService {
           isActive: false,
           timeLimit: 120, // 2 minutes
           rewards: {
-            xp: difficulty === 'easy' ? 100 : difficulty === 'medium' ? 200 : 300,
-            coins: difficulty === 'easy' ? 50 : difficulty === 'medium' ? 100 : 150,
+            xp: difficulty === 'easy' ? 20 : difficulty === 'medium' ? 35 : 50,
+            coins: difficulty === 'easy' ? 10 : difficulty === 'medium' ? 20 : 30,
           },
           icon: 'zap',
         };
@@ -120,28 +119,10 @@ export class LiveQuestService {
           isCompleted: false,
           isActive: false,
           rewards: {
-            xp: difficulty === 'easy' ? 80 : difficulty === 'medium' ? 150 : 250,
-            coins: difficulty === 'easy' ? 40 : difficulty === 'medium' ? 75 : 125,
+            xp: difficulty === 'easy' ? 15 : difficulty === 'medium' ? 30 : 45,
+            coins: difficulty === 'easy' ? 8 : difficulty === 'medium' ? 15 : 25,
           },
           icon: 'target',
-        };
-
-      case 'heart_rate_zone':
-        return {
-          id: questId,
-          title: 'Heart Zone Challenge',
-          description: `Keep your heart rate above 140 BPM for ${difficulty === 'easy' ? '45' : difficulty === 'medium' ? '75' : '105'} seconds`,
-          type,
-          difficulty,
-          target: difficulty === 'easy' ? 45 : difficulty === 'medium' ? 75 : 105,
-          progress: 0,
-          isCompleted: false,
-          isActive: false,
-          rewards: {
-            xp: difficulty === 'easy' ? 120 : difficulty === 'medium' ? 200 : 300,
-            coins: difficulty === 'easy' ? 60 : difficulty === 'medium' ? 100 : 150,
-          },
-          icon: 'heart',
         };
 
       case 'speed_burst':
@@ -156,8 +137,8 @@ export class LiveQuestService {
           isCompleted: false,
           isActive: false,
           rewards: {
-            xp: difficulty === 'easy' ? 150 : difficulty === 'medium' ? 250 : 350,
-            coins: difficulty === 'easy' ? 75 : difficulty === 'medium' ? 125 : 175,
+            xp: difficulty === 'easy' ? 25 : difficulty === 'medium' ? 40 : 50,
+            coins: difficulty === 'easy' ? 12 : difficulty === 'medium' ? 20 : 30,
           },
           icon: 'trending-up',
         };
@@ -174,8 +155,8 @@ export class LiveQuestService {
           isCompleted: false,
           isActive: false,
           rewards: {
-            xp: difficulty === 'easy' ? 200 : difficulty === 'medium' ? 350 : 500,
-            coins: difficulty === 'easy' ? 100 : difficulty === 'medium' ? 175 : 250,
+            xp: difficulty === 'easy' ? 30 : difficulty === 'medium' ? 45 : 50,
+            coins: difficulty === 'easy' ? 15 : difficulty === 'medium' ? 25 : 30,
           },
           icon: 'clock',
         };
@@ -229,16 +210,6 @@ export class LiveQuestService {
           // Check if pace is consistent and reasonable (between 3-10 min/km)
           if (metrics.pace > 0 && metrics.pace >= 3 && metrics.pace <= 10) {
             quest.progress += 10; // 10 seconds of good pace
-          }
-          break;
-
-        case 'heart_rate_zone':
-          // Use heart rate from HealthKit if available
-          if (metrics.heartRate && metrics.heartRate > 140) {
-            quest.progress += 10; // 10 seconds in zone
-          } else if (!metrics.heartRate && metrics.speed > 3) {
-            // Fallback: if no heart rate data, use speed as proxy for intensity
-            quest.progress += 10; // 10 seconds of high intensity running
           }
           break;
 
