@@ -1,133 +1,206 @@
 import { useState, useEffect, useCallback } from 'react';
-import { AchievementProgress, NewAchievement } from '@/types/achievements';
-import { AchievementsService } from '@/services/AchievementsService';
+import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 
-export interface UseAchievementsReturn {
-  achievements: AchievementProgress[];
-  completedAchievements: AchievementProgress[];
-  isLoading: boolean;
-  error: string | null;
-  stats: {
-    totalAchievements: number;
-    completedAchievements: number;
-    completionPercentage: number;
-    totalXpEarned: number;
-    totalCoinsEarned: number;
-    rarityBreakdown: Record<string, number>;
-  };
-  refreshAchievements: () => Promise<void>;
-  checkAndAwardAchievements: () => Promise<NewAchievement[]>;
-  checkSingleRunAchievements: (distance: number) => Promise<NewAchievement[]>;
-  getAchievementsByCategory: (category: string) => AchievementProgress[];
-  getRecentAchievements: (days?: number) => Promise<AchievementProgress[]>;
+export interface Achievement {
+  id: string;
+  key: string;
+  title: string;
+  description: string;
+  icon: string;
+  rarity: 'bronze' | 'silver' | 'gold' | 'platinum' | 'legendary';
+  category: string;
+  requirement_type: string;
+  requirement_value: number;
+  xp_reward: number;
+  coin_reward: number;
+  is_hidden: boolean;
 }
 
-export function useAchievements(): UseAchievementsReturn {
-  const { user, isAuthenticated } = useAuth();
-  const [achievements, setAchievements] = useState<AchievementProgress[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+export interface UserAchievement {
+  id: string;
+  user_id: string;
+  achievement_id: string;
+  progress: number;
+  is_completed: boolean;
+  unlocked_at: string | null;
+}
+
+export interface AchievementWithProgress {
+  achievement: Achievement;
+  progress: number;
+  is_completed: boolean;
+  unlocked_at: string | null;
+  percentage: number;
+}
+
+export interface Goal {
+  id: string;
+  title: string;
+  description: string;
+  progress: number;
+  target: number;
+  type: string;
+  icon: string;
+  color: string;
+}
+
+export function useAchievements() {
+  const { user } = useAuth();
+  const [achievements, setAchievements] = useState<AchievementWithProgress[]>([]);
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState({
     totalAchievements: 0,
-    completedAchievements: 0,
-    completionPercentage: 0,
-    totalXpEarned: 0,
-    totalCoinsEarned: 0,
-    rarityBreakdown: {},
+    unlockedAchievements: 0,
+    completionPercentage: 0
   });
 
-  const achievementsService = AchievementsService.getInstance();
-
-  const refreshAchievements = useCallback(async () => {
-    if (!isAuthenticated || !user) {
-      setAchievements([]);
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-
+  const fetchAchievements = useCallback(async () => {
+    if (!user) return;
+    
     try {
-      const [userAchievements, achievementStats] = await Promise.all([
-        achievementsService.getUserAchievements(user.id),
-        achievementsService.getAchievementStats(user.id),
-      ]);
-
-      setAchievements(userAchievements);
-      setStats(achievementStats);
+      setLoading(true);
+      
+      // Fetch all achievements and user progress in a single query
+      const { data, error } = await supabase
+        .from('achievements')
+        .select(`
+          *,
+          user_achievements!left (
+            id,
+            progress,
+            is_completed,
+            unlocked_at
+          )
+        `)
+        .eq('user_achievements.user_id', user.id)
+        .order('requirement_value', { ascending: true });
+      
+      if (error) {
+        console.error('Error fetching achievements:', error);
+        setError('Failed to load achievements');
+        return;
+      }
+      
+      // Process the data to combine achievements with user progress
+      const achievementsWithProgress: AchievementWithProgress[] = data.map(item => {
+        const userAchievement = item.user_achievements?.[0];
+        const progress = userAchievement?.progress || 0;
+        const percentage = item.requirement_value > 0 
+          ? Math.min(100, (progress / item.requirement_value) * 100) 
+          : 0;
+        
+        return {
+          achievement: {
+            id: item.id,
+            key: item.key,
+            title: item.title,
+            description: item.description,
+            icon: item.icon,
+            rarity: item.rarity,
+            category: item.category,
+            requirement_type: item.requirement_type,
+            requirement_value: item.requirement_value,
+            xp_reward: item.xp_reward,
+            coin_reward: item.coin_reward,
+            is_hidden: item.is_hidden
+          },
+          progress,
+          is_completed: userAchievement?.is_completed || false,
+          unlocked_at: userAchievement?.unlocked_at || null,
+          percentage
+        };
+      });
+      
+      setAchievements(achievementsWithProgress);
+      
+      // Calculate stats
+      const unlockedCount = achievementsWithProgress.filter(a => a.is_completed).length;
+      setStats({
+        totalAchievements: achievementsWithProgress.length,
+        unlockedAchievements: unlockedCount,
+        completionPercentage: achievementsWithProgress.length > 0 
+          ? (unlockedCount / achievementsWithProgress.length) * 100 
+          : 0
+      });
+      
+      // Generate active goals from in-progress achievements
+      const activeGoals: Goal[] = achievementsWithProgress
+        .filter(a => !a.is_completed && a.progress > 0)
+        .slice(0, 3) // Limit to 3 active goals
+        .map(a => ({
+          id: a.achievement.id,
+          title: a.achievement.title,
+          description: a.achievement.description,
+          progress: a.progress,
+          target: a.achievement.requirement_value,
+          type: a.achievement.requirement_type,
+          icon: a.achievement.icon,
+          color: getRarityColor(a.achievement.rarity)
+        }));
+      
+      // If we have fewer than 3 active goals, add some from unstarted achievements
+      if (activeGoals.length < 3) {
+        const unstarted = achievementsWithProgress
+          .filter(a => !a.is_completed && a.progress === 0)
+          .slice(0, 3 - activeGoals.length);
+          
+        unstarted.forEach(a => {
+          activeGoals.push({
+            id: a.achievement.id,
+            title: a.achievement.title,
+            description: a.achievement.description,
+            progress: 0,
+            target: a.achievement.requirement_value,
+            type: a.achievement.requirement_type,
+            icon: a.achievement.icon,
+            color: getRarityColor(a.achievement.rarity)
+          });
+        });
+      }
+      
+      setGoals(activeGoals);
+      
     } catch (err) {
-      console.error('Error refreshing achievements:', err);
-      setError('Failed to load achievements');
+      console.error('Error in fetchAchievements:', err);
+      setError('An unexpected error occurred');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
-  }, [isAuthenticated, user, achievementsService]);
+  }, [user]);
 
-  const checkAndAwardAchievements = useCallback(async (): Promise<NewAchievement[]> => {
-    if (!user) return [];
-
-    try {
-      const newAchievements = await achievementsService.checkAndAwardAchievements(user.id);
-      if (newAchievements.length > 0) {
-        // Refresh achievements to get updated progress
-        await refreshAchievements();
-      }
-      return newAchievements;
-    } catch (err) {
-      console.error('Error checking achievements:', err);
-      return [];
+  // Helper function to get color based on rarity
+  const getRarityColor = (rarity: string): string => {
+    switch (rarity) {
+      case 'bronze': return '#cd7f32';
+      case 'silver': return '#c0c0c0';
+      case 'gold': return '#ffd700';
+      case 'platinum': return '#e5e4e2';
+      case 'legendary': return '#ff6b6b';
+      default: return '#cd7f32';
     }
-  }, [user, achievementsService, refreshAchievements]);
+  };
 
-  const checkSingleRunAchievements = useCallback(async (distance: number): Promise<NewAchievement[]> => {
-    if (!user) return [];
-
-    try {
-      const newAchievements = await achievementsService.checkSingleRunAchievements(user.id, distance);
-      if (newAchievements.length > 0) {
-        // Refresh achievements to get updated progress
-        await refreshAchievements();
-      }
-      return newAchievements;
-    } catch (err) {
-      console.error('Error checking single run achievements:', err);
-      return [];
-    }
-  }, [user, achievementsService, refreshAchievements]);
-
-  const getAchievementsByCategory = useCallback((category: string): AchievementProgress[] => {
-    return achievements.filter(achievement => achievement.achievement.category === category);
-  }, [achievements]);
-
-  const getRecentAchievements = useCallback(async (days: number = 30): Promise<AchievementProgress[]> => {
-    if (!user) return [];
-
-    try {
-      return await achievementsService.getRecentAchievements(user.id, days);
-    } catch (err) {
-      console.error('Error getting recent achievements:', err);
-      return [];
-    }
-  }, [user, achievementsService]);
-
-  // Load achievements when user changes
+  // Fetch achievements when user changes
   useEffect(() => {
-    refreshAchievements();
-  }, [refreshAchievements]);
-
-  const completedAchievements = achievements.filter(a => a.isCompleted);
+    fetchAchievements();
+    
+    // Set up a refresh interval (every 60 seconds)
+    const interval = setInterval(() => {
+      fetchAchievements();
+    }, 60000);
+    
+    return () => clearInterval(interval);
+  }, [fetchAchievements]);
 
   return {
     achievements,
-    completedAchievements,
-    isLoading,
+    goals,
+    loading,
     error,
     stats,
-    refreshAchievements,
-    checkAndAwardAchievements,
-    checkSingleRunAchievements,
-    getAchievementsByCategory,
-    getRecentAchievements,
+    refreshAchievements: fetchAchievements
   };
 }

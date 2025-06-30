@@ -514,8 +514,14 @@ export class WorkoutService {
       case 'outdoor_run':
         typeMultiplier = 1.2; // 20% bonus for outdoor running
         break;
+      case 'indoor_run':
+        typeMultiplier = 1.1; // 10% bonus for indoor running
+        break;
       case 'outdoor_walk':
         typeMultiplier = 1.0; // Base rate for walking
+        break;
+      case 'indoor_walk':
+        typeMultiplier = 0.9; // 10% reduction for indoor walking
         break;
     }
     
@@ -660,14 +666,29 @@ export class WorkoutService {
 
         // Check for new achievements
         try {
-          const { data: newAchievements, error: achievementError } = await supabase
+          // First check general achievements
+          const { data: generalAchievements, error: generalError } = await supabase
             .rpc('check_and_award_achievements', { p_user_id: user.id });
 
-          if (achievementError) {
-            console.error('Error checking achievements:', achievementError);
-          } else if (newAchievements && newAchievements.length > 0) {
-            console.log('🏆 New achievements unlocked:', newAchievements.length);
+          if (generalError) {
+            console.error('Error checking general achievements:', generalError);
+          } else if (generalAchievements && generalAchievements.length > 0) {
+            console.log('🏆 New general achievements unlocked:', generalAchievements.length);
           }
+          
+          // Then check single-run achievements
+          const { data: singleRunAchievements, error: singleRunError } = await supabase
+            .rpc('check_single_run_achievements', { 
+              p_user_id: user.id, 
+              p_distance: Math.round(session.metrics.distance) 
+            });
+
+          if (singleRunError) {
+            console.error('Error checking single-run achievements:', singleRunError);
+          } else if (singleRunAchievements && singleRunAchievements.length > 0) {
+            console.log('🏆 New single-run achievements unlocked:', singleRunAchievements.length);
+          }
+          
         } catch (achievementError) {
           console.error('Error in achievement check:', achievementError);
         }
