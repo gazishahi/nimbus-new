@@ -151,7 +151,7 @@ export default function RankScreen() {
         <View style={styles.header}>
           <BarChart3 size={32} color={Colors.primary.skyBlue} />
           <Text style={styles.title}>RANK</Text>
-          <Text style={styles.subtitle}>Compete with Fellow Runners</Text>
+          <Text style={styles.subtitle}>Compete with Fellow Heroes</Text>
         </View>
 
         {/* Current User Stats */}
