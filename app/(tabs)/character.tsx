@@ -165,6 +165,13 @@ const styles = StyleSheet.create({
     color: Colors.text.secondary,
     textAlign: 'center',
   },
+  subtitleAlt: {
+    fontFamily: 'PressStart2P',
+    fontSize: 10,
+    color: Colors.text.secondary,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
   setupActions: {
     padding: 20,
   },
