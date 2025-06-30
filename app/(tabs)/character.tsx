@@ -81,6 +81,15 @@ export default function CharacterScreen() {
             />
           </View>
 
+          {/* Black Circle Image */}
+        <View style={styles.imageContainer}>
+          <Image 
+            source={require('@/assets/images/black_circle_360x360.png')}
+            style={styles.circleImage}
+            resizeMode="contain"
+          />
+        </View>
+
           <View style={styles.bottomSpacing} />
         </ScrollView>
       </SafeAreaView>
