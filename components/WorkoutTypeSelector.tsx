@@ -98,7 +98,8 @@ export default function WorkoutTypeSelector({ onSelectType, disabled = false }: 
 
 const styles = StyleSheet.create({
   container: {
-    padding: 20,
+    paddingTop: 20,
+    paddingHorizontal: 20,
   },
   title: {
     fontFamily: 'PressStart2P',
@@ -118,7 +119,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 16,
-    marginBottom: 0,
   },
   typeCard: {
     flex: 1,
