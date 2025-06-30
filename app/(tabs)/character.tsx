@@ -90,8 +90,10 @@ export default function CharacterScreen() {
           />
         </View>
 
-          <Text style={styles.subtitle}>Supabase Organization Slug</Text>
+          <View style={styles.setupActions}>
+        <Text style={styles.subtitle}>Supabase Organization Slug</Text>
         <Text style={styles.subtitle}>uaisldekqkaansgnbfgs</Text>
+        </View>
 
           <View style={styles.bottomSpacing} />
         </ScrollView>
