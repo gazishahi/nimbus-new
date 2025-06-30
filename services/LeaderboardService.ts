@@ -64,10 +64,6 @@ export class LeaderboardService {
             monthly_distance,
             all_time_distance
           ),
-          user_stats:user_id(
-            level,
-            character_class
-          )
         `)
         .eq('leaderboard_type', leaderboardType)
         .order('rank_position', { ascending: true })
