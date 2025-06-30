@@ -97,7 +97,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 16,
-    marginBottom: 4,
+    marginBottom: 0,
   },
   typeCard: {
     flex: 1,
