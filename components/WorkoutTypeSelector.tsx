@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MapPin, Chrome as Home, Footprints, Clock } from 'lucide-react-native';
+import { MapPin, Footprints } from 'lucide-react-native';
 import { WorkoutType } from '@/types/workout';
 import { Colors } from '@/constants/Colors';
 
@@ -19,25 +19,11 @@ const workoutTypes: WorkoutType[] = [
     color: Colors.primary.skyBlue,
   },
   {
-    id: 'indoor_run',
-    name: 'Indoor Run',
-    description: 'Treadmill or indoor track running',
-    icon: 'home',
-    color: Colors.accent.lightning,
-  },
-  {
     id: 'outdoor_walk',
     name: 'Outdoor Walk',
     description: 'Leisurely walk with GPS tracking',
     icon: 'footprints',
     color: Colors.accent.rainGreen,
-  },
-  {
-    id: 'indoor_walk',
-    name: 'Indoor Walk',
-    description: 'Indoor walking or treadmill',
-    icon: 'clock',
-    color: Colors.accent.sunset,
   },
 ];
 
@@ -48,12 +34,8 @@ export default function WorkoutTypeSelector({ onSelectType, disabled = false }: 
     switch (iconName) {
       case 'map-pin':
         return <MapPin {...iconProps} />;
-      case 'home':
-        return <Home {...iconProps} />;
       case 'footprints':
         return <Footprints {...iconProps} />;
-      case 'clock':
-        return <Clock {...iconProps} />;
       default:
         return <MapPin {...iconProps} />;
     }
