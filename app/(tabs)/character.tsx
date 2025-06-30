@@ -71,16 +71,6 @@ export default function CharacterScreen() {
             error={error}
           />
 
-          <View style={styles.setupLinkContainer}>
-            <Text style={styles.setupLinkText}>Need to configure Supabase?</Text>
-            <PixelButton
-              title="SETUP GUIDE"
-              onPress={() => setShowSupabaseSetup(true)}
-              variant="secondary"
-              size="small"
-            />
-          </View>
-
           {/* Black Circle Image */}
         <View style={styles.imageContainer}>
           <Image 
