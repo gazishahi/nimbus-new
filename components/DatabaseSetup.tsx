@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS profiles (
 -- Create user_stats table
 CREATE TABLE IF NOT EXISTS user_stats (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL UNIQUE,
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL UNIQUE,
   total_distance INTEGER DEFAULT 0,
   total_runs INTEGER DEFAULT 0,
   total_time INTEGER DEFAULT 0,
@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS user_stats (
 -- Create workout_sessions table
 CREATE TABLE IF NOT EXISTS workout_sessions (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
   start_time TIMESTAMPTZ NOT NULL,
   end_time TIMESTAMPTZ,
   workout_type TEXT DEFAULT 'running' CHECK (workout_type IN ('running', 'walking', 'cycling', 'other')),
@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS workout_sessions (
 -- Create leaderboards table
 CREATE TABLE IF NOT EXISTS leaderboards (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
   leaderboard_type TEXT NOT NULL CHECK (leaderboard_type IN ('weekly_distance', 'monthly_distance', 'weekly_runs', 'monthly_runs', 'level_ranking')),
   period_start DATE NOT NULL,
   period_end DATE NOT NULL,
@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS achievements (
 -- Create user_achievements table
 CREATE TABLE IF NOT EXISTS user_achievements (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
   achievement_id UUID REFERENCES achievements(id) ON DELETE CASCADE NOT NULL,
   unlocked_at TIMESTAMPTZ DEFAULT NOW(),
   progress INTEGER DEFAULT 0,
