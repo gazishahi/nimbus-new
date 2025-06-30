@@ -89,7 +89,12 @@ export class WorkoutService {
   pauseWorkout(): void {
     if (!this.currentSession?.isActive) return;
 
-    this.currentSession.isPaused = true;
+    // Create a new session object with isPaused set to true
+    this.currentSession = {
+      ...this.currentSession,
+      isPaused: true
+    };
+    
     this.stopTracking();
     this.notifyListeners();
     console.log('⏸️ Workout paused');
@@ -99,7 +104,12 @@ export class WorkoutService {
   resumeWorkout(): void {
     if (!this.currentSession?.isActive || !this.currentSession.isPaused) return;
 
-    this.currentSession.isPaused = false;
+    // Create a new session object with isPaused set to false
+    this.currentSession = {
+      ...this.currentSession,
+      isPaused: false
+    };
+    
     this.lastUpdateTime = Date.now();
     this.lastStepUpdateTime = Date.now();
     this.startTracking();
@@ -116,8 +126,13 @@ export class WorkoutService {
 
     console.log('🏁 Ending workout session:', this.currentSession.id);
 
-    this.currentSession.isActive = false;
-    this.currentSession.endTime = new Date();
+    // Create a new session object with isActive set to false and endTime set
+    this.currentSession = {
+      ...this.currentSession,
+      isActive: false,
+      endTime: new Date()
+    };
+    
     this.stopTracking();
 
     // Generate summary with current session data
@@ -206,16 +221,27 @@ export class WorkoutService {
     // Calculate total elapsed time (excluding paused time)
     const totalElapsed = (now - this.currentSession.startTime.getTime()) / 1000;
     
-    // Update duration
-    this.currentSession.metrics.duration = totalElapsed;
+    // Create a new metrics object with updated duration
+    const updatedMetrics: WorkoutMetrics = {
+      ...this.currentSession.metrics,
+      duration: totalElapsed,
+      timestamp: new Date()
+    };
     
     // For indoor workouts, estimate distance based on time and workout type
     if (this.isIndoorWorkout) {
-      this.updateIndoorWorkoutMetrics(deltaTime);
+      const updatedIndoorMetrics = this.updateIndoorWorkoutMetrics(deltaTime, updatedMetrics);
+      updatedMetrics.distance = updatedIndoorMetrics.distance;
+      updatedMetrics.speed = updatedIndoorMetrics.speed;
+      updatedMetrics.pace = updatedIndoorMetrics.pace;
+      updatedMetrics.maxSpeed = updatedIndoorMetrics.maxSpeed;
     }
     
-    // Update timestamp
-    this.currentSession.metrics.timestamp = new Date();
+    // Create a new session object with the updated metrics
+    this.currentSession = {
+      ...this.currentSession,
+      metrics: updatedMetrics
+    };
     
     // Notify listeners
     this.notifyListeners();
@@ -234,27 +260,25 @@ export class WorkoutService {
   }
 
   // Update indoor workout metrics using time-based estimation
-  private updateIndoorWorkoutMetrics(deltaTime: number): void {
-    if (!this.currentSession) return;
-    
+  private updateIndoorWorkoutMetrics(deltaTime: number, currentMetrics: WorkoutMetrics): WorkoutMetrics {
     // Time since last step update in seconds
     const timeSinceLastStepUpdate = (Date.now() - this.lastStepUpdateTime) / 1000;
     
     // Only update every 0.5 seconds to avoid too frequent updates
-    if (timeSinceLastStepUpdate < 0.5) return;
+    if (timeSinceLastStepUpdate < 0.5) return currentMetrics;
     
     this.lastStepUpdateTime = Date.now();
     
     // Estimate speed based on workout type
     let estimatedSpeed = 0; // km/h
     
-    if (this.currentSession.type === 'indoor_run') {
+    if (this.currentSession?.type === 'indoor_run') {
       // Average running speed: 8-12 km/h
       // Add some variation to make it look realistic
       const baseSpeed = 10; // km/h
       const variation = Math.sin(Date.now() / 5000) * 2; // Varies between -2 and 2 over time
       estimatedSpeed = baseSpeed + variation;
-    } else if (this.currentSession.type === 'indoor_walk') {
+    } else if (this.currentSession?.type === 'indoor_walk') {
       // Average walking speed: 4-6 km/h
       const baseSpeed = 5; // km/h
       const variation = Math.sin(Date.now() / 8000) * 1; // Varies between -1 and 1 over time
@@ -264,33 +288,31 @@ export class WorkoutService {
     // Ensure speed is positive
     estimatedSpeed = Math.max(0, estimatedSpeed);
     
-    // Update speed
-    this.currentSession.metrics.speed = estimatedSpeed;
-    
-    // Update max speed if needed
-    if (estimatedSpeed > (this.currentSession.metrics.maxSpeed || 0)) {
-      this.currentSession.metrics.maxSpeed = estimatedSpeed;
-    }
-    
     // Calculate pace (min/km) from speed
-    if (estimatedSpeed > 0) {
-      this.currentSession.metrics.pace = 60 / estimatedSpeed;
-    }
+    const pace = estimatedSpeed > 0 ? 60 / estimatedSpeed : 0;
     
     // Calculate distance increment for this update
     // speed (km/h) * time (h) = distance (km)
     // Convert to meters: * 1000
     const distanceIncrement = (estimatedSpeed * (deltaTime / 3600)) * 1000;
     
-    // Update distance
-    this.currentSession.metrics.distance += distanceIncrement;
+    // Create a new metrics object with updated values
+    const updatedMetrics: WorkoutMetrics = {
+      ...currentMetrics,
+      speed: estimatedSpeed,
+      pace: pace,
+      distance: currentMetrics.distance + distanceIncrement,
+      maxSpeed: Math.max(estimatedSpeed, currentMetrics.maxSpeed || 0)
+    };
     
     console.log('🏠 Indoor workout update:', {
       estimatedSpeed: estimatedSpeed.toFixed(1),
       distanceIncrement: distanceIncrement.toFixed(2),
-      totalDistance: this.currentSession.metrics.distance.toFixed(2),
+      totalDistance: updatedMetrics.distance.toFixed(2),
       deltaTime: deltaTime.toFixed(2),
     });
+    
+    return updatedMetrics;
   }
 
   // Start location tracking
@@ -354,9 +376,14 @@ export class WorkoutService {
       speed: location.coords.speed || undefined,
     };
 
-    this.routePoints.push(locationPoint);
-    this.currentSession.route = [...this.routePoints];
+    // Create a new array with the new point added
+    const newRoutePoints = [...this.routePoints, locationPoint];
+    this.routePoints = newRoutePoints;
+    
     console.log(`📍 Added point to route, now have ${this.routePoints.length} points`);
+
+    // Get current metrics to update
+    let updatedMetrics = { ...this.currentSession.metrics };
 
     // Calculate distance if we have a previous location
     if (this.routePoints.length > 1) {
@@ -383,8 +410,8 @@ export class WorkoutService {
       
       // Only add distance if it's reasonable (to filter out GPS jumps)
       if (distance < 50) { // Max 50 meters per second (180 km/h)
-        this.currentSession.metrics.distance += distance;
-        console.log(`📏 Updated total distance: ${this.currentSession.metrics.distance.toFixed(2)}m`);
+        updatedMetrics.distance += distance;
+        console.log(`📏 Updated total distance: ${updatedMetrics.distance.toFixed(2)}m`);
       } else {
         console.log(`⚠️ Distance jump detected (${distance.toFixed(2)}m), ignoring`);
       }
@@ -396,11 +423,11 @@ export class WorkoutService {
       const speedKmh = location.coords.speed * 3.6;
       console.log(`🏎️ Speed from GPS: ${location.coords.speed.toFixed(2)} m/s = ${speedKmh.toFixed(2)} km/h`);
       
-      this.currentSession.metrics.speed = speedKmh;
+      updatedMetrics.speed = speedKmh;
       
       // Update max speed
-      if (speedKmh > (this.currentSession.metrics.maxSpeed || 0)) {
-        this.currentSession.metrics.maxSpeed = speedKmh;
+      if (speedKmh > (updatedMetrics.maxSpeed || 0)) {
+        updatedMetrics.maxSpeed = speedKmh;
         console.log(`🏎️ New max speed: ${speedKmh.toFixed(2)} km/h`);
       }
       
@@ -408,7 +435,7 @@ export class WorkoutService {
       if (speedKmh > 0) {
         // 60 / speed(km/h) = pace(min/km)
         const pace = 60 / speedKmh;
-        this.currentSession.metrics.pace = pace;
+        updatedMetrics.pace = pace;
         console.log(`⏱️ Calculated pace: ${pace.toFixed(2)} min/km`);
       } else {
         console.log('⏱️ Speed is zero or negative, cannot calculate pace');
@@ -416,6 +443,13 @@ export class WorkoutService {
     } else {
       console.log('⚠️ No speed data available from GPS');
     }
+
+    // Create a new session object with updated metrics and route
+    this.currentSession = {
+      ...this.currentSession,
+      metrics: updatedMetrics,
+      route: [...newRoutePoints]
+    };
 
     this.notifyListeners();
   }
