@@ -166,8 +166,8 @@ const styles = StyleSheet.create({
   },
   imageContainer: {
     alignItems: 'center',
-    paddingVertical: 10,
-    marginTop: 10,
+    paddingVertical: 0,
+    marginTop: 0,
   },
   circleImage: {
     width: 100,
