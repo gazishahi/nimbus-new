@@ -63,7 +63,7 @@ export class LeaderboardService {
             weekly_distance,
             monthly_distance,
             all_time_distance
-          ),
+          )
         `)
         .eq('leaderboard_type', leaderboardType)
         .order('rank_position', { ascending: true })
