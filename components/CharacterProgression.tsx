@@ -566,6 +566,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   bottomSpacing: {
-    height: 100,
+    height: 50,
   },
 });
